@@ -1,10 +1,6 @@
-from phi.agent import Agent
-from phi.model.groq import Groq
-from phi.tools.duckduckgo import DuckDuckGo
 from dotenv import load_dotenv
-from Agents.Agent_Query_Selector import route_query  # Assuming route_query is defined elsewhere
+from Agents.Agent_Query_Selector import route_query
 
-# Import your custom agents (replace placeholders with actual implementations)
 from Agents.Agent_web_search import web_search_agent
 from Agents.Agent_Code_Review import code_review_agent
 from Agents.Agent_Quantization import quantization_agent
@@ -20,6 +16,7 @@ def run_multiple_queries(queries):
     for query in queries:
         # Use route_query to determine the most suitable agent
         selected_agent = route_query(query)
+        print(f"Selected Agent: {selected_agent}")
 
         if selected_agent is None:
             print(f"I'm not sure which agent to use for the query: '{query}'. Please try rephrasing. Still Using web to search")
@@ -27,15 +24,23 @@ def run_multiple_queries(queries):
             continue
 
         # Handle each agent type with appropriate print_response calls
-        if selected_agent.name.lower().startswith("web"):
+        if selected_agent.lower().startswith("web"):
             web_search_agent.print_response(query, stream=True)
-        elif selected_agent.name.lower().startswith("code"):
+
+        elif selected_agent.lower().startswith("code"):
             code_review_agent.print_response(query, stream=True)
-        elif selected_agent.name.lower().startswith("quantization"):
+
+        elif selected_agent.lower().startswith("quantization"):
             quantization_agent.print_response(query, stream=True)
+
         else:
-            print(f"An unexpected agent type was selected: {selected_agent.name}")
+            print(f"An unexpected agent type was selected: {selected_agent}")
+            web_search_agent.print_response(query, stream=True)
 
 if __name__ == "__main__":
+    load_dotenv()
+    # For multiple query process load the queries in the list
     queries = ["capital of India", "total sales of the product", "python code having fixes solve it def add ():"]
+    # Example usage
+    # queries = ["What is the capital of Nepal?"]
     run_multiple_queries(queries)
