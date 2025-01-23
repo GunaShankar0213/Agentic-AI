@@ -151,47 +151,138 @@ def retrieve_and_display(collection_name):
 
 #################  Lets initialize with Agent ########################
 
+# import os
+# from phi.knowledge.pdf import PDFUrlKnowledgeBase
+# from phi.vectordb.qdrant import Qdrant
+# import os
+# import typer
+# from typing import Optional
+# from rich.prompt import Prompt
+
+# from phi.agent import Agent
+# from phi.knowledge.pdf import PDFUrlKnowledgeBase
+# from phi.vectordb.qdrant import Qdrant
+
+# # No need for an API key or authentication when using a local Qdrant server
+# qdrant_url = "http://172.20.10.64:6333"
+# collection_name = "my_collection_pdf"
+
+# # Create the Qdrant vector database object without using API key
+# vector_db = Qdrant(
+#     collection=collection_name,
+#     url=qdrant_url,
+#     # Local Qdrant URL without the API key
+# )
+# pdf_path = "/home/guna_shankar/Agentic_Ai/sample code works/"
+# # Define the knowledge base with the local server's PDF file path
+# knowledge_base = PDFUrlKnowledgeBase(
+#     path=pdf_path,
+#     vector_db=vector_db,
+# )
+
+# # Load the knowledge base with or without upserting based on your need
+# knowledge_base.load(recreate=True, upsert=True)
+
+# os.environ["GROQ_API_KEY"] = "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" 
+
+# agent = Agent(
+#     model=Groq(id="llama-3.3-70b-versatile",api_key=os.environ["GROQ_API_KEY"]),
+#     # Add the knowledge base to the agent
+#     knowledge=knowledge_base,
+#     show_tool_calls=True,
+#     markdown=True,
+# )
+
+import os
+import ollama
+from phi.knowledge.pdf import PDFKnowledgeBase
+from phi.vectordb.qdrant import Qdrant
+from phi.document import Document
 from phi.agent import Agent
-from phi.model.openai import OpenAIChat
-from phi.embedder.openai import OpenAIEmbedder
-from phi.knowledge.pdf import PDFUrlKnowledgeBase
-from phi.vectordb.qdrant import qdrant
-from phi.embedder.ollama import OllamaEmbedder
-client = QdrantClient(url="http://172.20.10.64:6333", port=6333)
-# Initialize logger
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
 
-logger.info("Creating Vector DB")
-# Define the Qdrant client
-vector_db = Qdrant(
-    collection_name="my_collection_pdf",  # Name of the collection in Qdrant
-    embeddings=OllamaEmbedder(),  # Embedder for document embeddings
-    url="http://172.20.10.64:6333",
-    port=6333,  # Set to True if you want to prefer grpc connections
-)
+# Define paths and URLs
+pdf_path = "/home/guna_shankar/Agentic_Ai/sample code works/"
+qdrant_url = "http://172.20.10.64:6333"
+collection_name = "my_collection_pdf"
 
-logger.info("Vector DB Sucessfull")
- 
-pdf_path = '/home/guna_shankar/Agentic_Ai/sample code works/Proctivityinmanufacturingindustries.pdf'
-# Create a knowledge base from a PDF
-knowledge_base = PDFUrlKnowledgeBase(
-    
-    vector_db=vector_db,  # Pass the Qdrant instance as the vector_db
-)
+# Initialize the knowledge base for local PDFs and Qdrant client
+knowledge_base = PDFKnowledgeBase(path=pdf_path, vector_db=None)
+vector_db = Qdrant(collection=collection_name, url=qdrant_url)
 
-# Comment out after first run as the knowledge base is loaded
-knowledge_base.load()
+# Function to generate embeddings using Ollama model
+def generate_embeddings(text: str):
+    try:
+        # Request embeddings from Ollama model
+        response = ollama.chat(model="llama3.2:1b", messages=[{"role": "user", "content": text}])
+        embedding = response.get("embedding")
+        if embedding is None:
+            print("No embedding found in response.")
+            return None
+        return embedding
+    except Exception as e:
+        print(f"Error generating embeddings: {e}")
+        return None
 
+# Function to store embeddings in Qdrant
+def store_embeddings_in_qdrant(doc_id: str, embedding):
+    try:
+        # Store the embedding in Qdrant using the document ID
+        vector_db.upsert(vectors=[embedding], ids=[doc_id])
+        print(f"Embedding for {doc_id} stored successfully.")
+    except Exception as e:
+        print(f"Error storing embedding in Qdrant: {e}")
 
-logger.info("KB Loaded Seccuessfully")
+# Extract text from PDFs, generate embeddings, and store them in Qdrant
+def process_pdfs_and_store_embeddings():
+    documents = []
+    for doc_list in knowledge_base.document_lists:
+        for doc in doc_list:
+            # Print the document object to inspect its structure
+            print(f"Document structure: {dir(doc)}")
+            
+            # Try to access the correct text attribute based on the document structure
+            if hasattr(doc, "content"):  # If 'content' exists
+                text = doc.content
+            elif hasattr(doc, "text"):  # If 'text' exists
+                text = doc.text
+            else:
+                print(f"Cannot find text in document {doc.id}")
+                continue
 
-agent = Agent(
-    model=Groq(id="llama-3.3-70b-versatile"),
-    # Add the knowledge base to the agent
-    knowledge=knowledge_base,
-    show_tool_calls=True,
-    markdown=True,
-)
+            # Generate embeddings for the extracted text
+            embedding = generate_embeddings(text)
 
-agent.print_response("what is manufacturing", stream=True)
+            # If embedding is successfully generated, store it in Qdrant
+            if embedding:
+                store_embeddings_in_qdrant(doc.id, embedding)
+
+    print("Embedding process completed.")
+
+# Initialize agent (this part depends on your use case, this will create an agent object)
+def initialize_agent():
+    os.environ["GROQ_API_KEY"] = "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"
+    agent = Agent(
+        model=Groq(id="llama-3.3-70b-versatile", api_key=os.environ["GROQ_API_KEY"]),
+        knowledge=knowledge_base,
+        show_tool_calls=True,
+        markdown=True,
+    )
+    return agent
+
+# Main function to handle the entire process
+def main():
+    # Load the knowledge base (optional to upsert data)
+    knowledge_base.load(recreate=True, upsert=True)
+
+    # Process PDFs, generate embeddings, and store them in Qdrant
+    process_pdfs_and_store_embeddings()
+
+    # Initialize the agent
+    agent = initialize_agent()
+
+    # Interact with the agent (Example)
+    user_input = input("Ask the agent something: ")
+    agent.print_response(user_input, stream=True)
+
+if __name__ == "__main__":
+    main()
